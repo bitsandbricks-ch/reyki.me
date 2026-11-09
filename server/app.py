@@ -1,5 +1,8 @@
 """reyki.me service list: reads labelled Ingresses and HTTPRoutes from Kubernetes.
 
+Sources: Ingress (networking.k8s.io), HTTPRoute (Gateway API) and IngressRoute (Traefik CRD,
+host taken from the first Host(`...`) in its routes' match rules).
+
 Two ways to run the same image:
   MODE=json  only /services.json (with CORS for ALLOW_ORIGIN). Used for api.reyki.me,
              the public page itself lives on GitHub Pages and loads the list in the browser.
@@ -20,13 +23,14 @@ Annotations on a listed Ingress or HTTPRoute (all optional):
 
 Status (PROBE=true): up = answers in time with 2xx/3xx or a login wall (401/403),
 degraded = slower than SLOW_MS, another 4xx, or a TLS certificate problem, down = 5xx or no answer.
-Standard library only. Read-only in the cluster: list on ingresses and httproutes, nothing else.
+Standard library only. Read-only in the cluster: list on ingresses, httproutes and ingressroutes, nothing else.
 """
 
 from html import escape
 import json
 import mimetypes
 import os
+import re
 import ssl
 import threading
 import time
@@ -53,7 +57,9 @@ SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
 SOURCES = [
     ("Ingress", "/apis/networking.k8s.io/v1/ingresses"),
     ("HTTPRoute", "/apis/gateway.networking.k8s.io/v1/httproutes"),
+    ("IngressRoute", "/apis/traefik.io/v1alpha1/ingressroutes"),
 ]
+HOST_RULE = re.compile(r"Host\(\s*`([^`]+)`")
 CSP = ("default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self'; img-src 'self'; "
        "font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
@@ -69,6 +75,13 @@ def first_host(kind, obj):
         for tls in spec.get("tls") or []:
             for host in tls.get("hosts") or []:
                 return host
+        return None
+    if kind == "IngressRoute":
+        # Traefik CRD: the host lives in the match rule, e.g. Host(`a.example`) && PathPrefix(`/x`).
+        for route in spec.get("routes") or []:
+            found = HOST_RULE.search(route.get("match") or "")
+            if found:
+                return found.group(1)
         return None
     for host in spec.get("hostnames") or []:
         return host
@@ -172,7 +185,7 @@ class Kube:
             try:
                 out.append((kind, self.get(path)))
             except urllib.error.HTTPError as e:
-                if e.code != 404:  # 404 just means Gateway API is not installed
+                if e.code != 404:  # 404 just means that API (Gateway API, Traefik CRDs) is not installed
                     print(f"list {kind}: HTTP {e.code}", flush=True)
             except (urllib.error.URLError, OSError, ValueError) as e:
                 print(f"list {kind}: {e}", flush=True)

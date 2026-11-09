@@ -34,6 +34,16 @@ class Entries(unittest.TestCase):
         r = {"metadata": {"name": "git"}, "spec": {"hostnames": ["git.example.org"]}}
         self.assertEqual(app.to_entry("HTTPRoute", r)["url"], "https://git.example.org")
 
+    def test_traefik_ingressroute_host_from_match(self):
+        r = {"metadata": {"name": "tools"}, "spec": {"routes": [
+            {"match": "PathPrefix(`/only`)"},
+            {"match": "Host(`tools.example.org`) && PathPrefix(`/outpost.goauthentik.io/`)"},
+            {"match": "Host(`other.example.org`)"},
+        ]}}
+        self.assertEqual(app.to_entry("IngressRoute", r)["url"], "https://tools.example.org")
+        self.assertIsNone(app.to_entry("IngressRoute", {"metadata": {"name": "x"}, "spec": {"routes": [{"match": "HostRegexp(`.+`)"}]}}))
+        self.assertIsNone(app.to_entry("IngressRoute", {"metadata": {"name": "y"}, "spec": {}}))
+
     def test_tls_host_fallback_and_skips(self):
         self.assertEqual(app.to_entry("Ingress", ing("a", tls_host="a.example.org"))["url"], "https://a.example.org")
         self.assertIsNone(app.to_entry("Ingress", ing("b")))

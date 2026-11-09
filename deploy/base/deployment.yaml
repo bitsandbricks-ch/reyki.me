@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reyki-me
+  labels: { app: reyki-me }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: reyki-me }
+  template:
+    metadata:
+      labels: { app: reyki-me }
+    spec:
+      serviceAccountName: reyki-me
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: web
+          image: ghcr.io/bitsandbricks-ch/reyki.me
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: PROBE, value: "true" }      # status LED per service; "false" for links only
+            - { name: CACHE_SECONDS, value: "30" }
+            - { name: MODE, value: page }         # json in the public overlay
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reyki-me
+spec:
+  selector: { app: reyki-me }
+  ports:
+    - { name: http, port: 80, targetPort: http }

@@ -1,0 +1,23 @@
+# api.reyki.me: only /services.json, only entries labelled reyki.me/listed=public.
+# The reyki.me page itself is on GitHub Pages and fetches this.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+  - ingress.yaml
+nameSuffix: -public
+labels:
+  - pairs: { instance: public }
+    includeSelectors: true
+patches:
+  - target: { kind: Deployment }
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/2/value
+        value: json
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: LABEL_SELECTOR, value: "reyki.me/listed=public" }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: ALLOW_ORIGIN, value: "https://reyki.me" }

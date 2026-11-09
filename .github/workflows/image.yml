@@ -1,4 +1,4 @@
-# Tests the server, builds the image, and on main pushes it to ghcr.io/bitsandbricks-ch/reyki.me
+# Tests the server, renders the manifests, builds the image, and on main pushes it to ghcr.io/bitsandbricks-ch/reyki.me
 # (tags: latest and the commit sha). Pull requests only test and build.
 name: Image
 
@@ -18,6 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: python3 -m unittest discover -s tests -v
+      - name: Render the Kubernetes manifests
+        run: |
+          kubectl kustomize deploy/public
+          kubectl kustomize deploy/mesh
       - run: docker build -t ghcr.io/bitsandbricks-ch/reyki.me:latest -t ghcr.io/bitsandbricks-ch/reyki.me:${GITHUB_SHA::12} .
       - if: github.event_name != 'pull_request'
         env:

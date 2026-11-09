@@ -1,61 +1,92 @@
 # reyki.me
 
-Landing page for reyki.me, the public domain for self-hosted services. It runs as one small
-container in Kubernetes and lists every Ingress or HTTPRoute that carries the label
-`reyki.me/listed: "true"`. Add the label to a service and it shows up on the page within 30 seconds.
+reyki.me is the public domain for self-hosted services. This repo holds two things:
 
-Same fonts and colours as [bitsandbricks.ch](https://bitsandbricks.ch), its own layout.
-Server side rendered, no JavaScript, no cookies, no tracking, no outside requests, Python standard library only.
+- **The reyki.me page** (`site/`): static, on GitHub Pages, so it stays up when the cluster is down.
+  It loads the service list from `https://api.reyki.me/services.json` in the browser. If that does
+  not answer, the page says `% cluster unreachable`.
+- **The service list server** (`server/`): one small image, run twice in Kubernetes:
+  - `deploy/public` → **api.reyki.me**, JSON only, only entries labelled `public`, CORS for https://reyki.me.
+  - `deploy/mesh` → **mesh.reyki.net**, the full page served from the cluster, `public` + `internal` entries.
+
+Same fonts and colours as [bitsandbricks.ch](https://bitsandbricks.ch). No cookies, no tracking,
+no outside requests besides the list. Python standard library only.
 
 ## Listing a service
+
+Label an `Ingress` (networking.k8s.io/v1) or `HTTPRoute` (gateway.networking.k8s.io/v1):
 
 ```yaml
 metadata:
   labels:
-    reyki.me/listed: "true"
-  annotations:                                # all optional
-    reyki.me/name: Grafana                    # default: the object's name
-    reyki.me/description: Dashboards          # one line under the name
-    reyki.me/group: Monitoring                # heading it is grouped under
-    reyki.me/url: https://grafana.reyki.me/   # default: https://<first host>
-    reyki.me/order: "10"                      # sort inside the group, default 100
-    reyki.me/probe: "false"                   # no up/down LED for this one
+    reyki.me/listed: "public"      # reyki.me and mesh.reyki.net; "internal" = mesh.reyki.net only
+  annotations:                     # all optional
+    reyki.me/name: Grafana                     # default: the object's name
+    reyki.me/description: Dashboards           # one line under the name
+    reyki.me/group: Monitoring                 # heading it is grouped under
+    reyki.me/url: https://grafana.reyki.net/   # default: https://<first host>
+    reyki.me/order: "10"                       # sort inside the group, default 100
+    reyki.me/probe: "false"                    # no status LED for this one
+    reyki.me/probe-url: http://grafana.monitoring.svc:3000/api/health   # check this instead of the link
 ```
 
-Works on `Ingress` (networking.k8s.io/v1) and `HTTPRoute` (gateway.networking.k8s.io/v1; skipped
-when Gateway API is not installed). Wildcard hosts are skipped. With `PROBE=true` the server
-requests each link from inside the cluster and shows a green (answers) or orange (no answer, 5xx) LED.
+It shows up within 30 seconds. Wildcard hosts are skipped. The probe URL never leaves the server.
+
+## Status LED
+
+With `PROBE=true` (on in both overlays) the server checks each service from inside the cluster:
+
+| LED | Meaning |
+| --- | --- |
+| green | answers with 2xx/3xx, or a login wall (401/403), within `SLOW_MS` (1500 ms) |
+| orange | answers, but slowly, with another 4xx (e.g. 404), or with a bad TLS certificate |
+| red | 5xx or no answer within `PROBE_TIMEOUT` (5 s) |
+| none | probe turned off for this entry |
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
-| `site/index.html` | The page. `<!--SERVICES-->` is where the list goes |
-| `site/assets/` | `site.css` (colour tokens at the top), favicon, fonts (SIL OFL 1.1) |
-| `server/app.py` | Lists labelled Ingresses and HTTPRoutes, renders the page, serves `/`, `/assets/`, `/services.json`, `/healthz` |
+| `site/index.html` | The page. `<meta name="services">` says where the list comes from |
+| `site/assets/services.js` | Loads and renders the list, refreshes every 60 s |
+| `site/assets/site.css` | All styles, colour tokens at the top |
+| `server/app.py` | The list server (`MODE=json` or `MODE=page`) |
 | `tests/` | `python3 -m unittest discover -s tests` |
-| `deploy/` | Kustomize: namespace, read-only RBAC, Deployment, Service, Ingress |
-| `Dockerfile` | `python:3.13-alpine`, runs as uid 10001 |
+| `deploy/base` | Read-only RBAC (list ingresses and httproutes), Deployment |
+| `deploy/public`, `deploy/mesh` | The two instances, each with its Ingress |
 
 ## Running
 
-Pushing to `main` tests, builds and pushes `ghcr.io/bitsandbricks-ch/reyki.me:latest` (and `:<sha>`).
-Pull requests only test and build.
+- `main` → `.github/workflows/pages.yml` publishes `site/` (Settings > Pages > Source: **GitHub Actions**).
+- `main` → `.github/workflows/image.yml` tests, renders the manifests and pushes
+  `ghcr.io/bitsandbricks-ch/reyki.me:latest` and `:<sha>`. Pull requests only test and build.
 
 ```
-kubectl apply -k deploy/
+kubectl create namespace reyki-me
+kubectl apply -k deploy/public
+kubectl apply -k deploy/mesh
 ```
 
-Before the first apply: set `ingressClassName` and TLS in `deploy/ingress.yaml`, and either make the
-GHCR package public or add an image pull secret. Point `reyki.me` DNS at the ingress.
+Before the first apply:
+- set `ingressClassName` and TLS in `deploy/public/ingress.yaml` and `deploy/mesh/ingress.yaml`;
+- make the GHCR package public, or add an image pull secret;
+- DNS: `api.reyki.me` → the public ingress, `mesh.reyki.net` → the mesh only.
 
-Local run against a cluster, without the in-cluster token: `kubectl proxy --port 8001` then
-`KUBE_API=http://localhost:8001 python3 server/app.py` and open http://localhost:8080.
+**Keeping mesh.reyki.net private:** it is only private if its Ingress is served by a controller or
+load balancer that listens on the mesh (NetBird / Tailscale) and nowhere public. If the same
+public ingress controller serves it, anyone can reach it by sending `Host: mesh.reyki.net` to the
+public IP, even when DNS only points into the mesh. Use a mesh-only ingress class (e.g. the
+Tailscale operator's), or an IP allowlist for the mesh range on that Ingress.
+
+Local run against a real cluster: `kubectl proxy --port 8001`, then
+`KUBE_API=http://localhost:8001 MODE=page python3 server/app.py` and open http://localhost:8080.
 
 | Env | Default | |
 | --- | --- | --- |
-| `LABEL_SELECTOR` | `reyki.me/listed=true` | which objects to list |
-| `PROBE` | `false` (`true` in `deploy/`) | up/down LED per service |
-| `PROBE_TIMEOUT` | `3` | seconds per probe |
-| `CACHE_SECONDS` | `30` | how often the list is refreshed |
+| `MODE` | `page` | `page` (site + list) or `json` (list only) |
+| `LABEL_SELECTOR` | `reyki.me/listed=public` | which objects to list |
+| `ALLOW_ORIGIN` | empty | CORS origin for `/services.json` |
+| `SITE_NAME`, `SITE_TAGLINE` | empty | rename the page in `page` mode |
+| `PROBE`, `PROBE_TIMEOUT`, `SLOW_MS` | `false`, `5`, `1500` | status LED |
+| `CACHE_SECONDS` | `30` | how often the list and status refresh |
 | `PORT` | `8080` | |

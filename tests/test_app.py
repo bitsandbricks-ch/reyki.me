@@ -15,15 +15,20 @@ def ing(name, host=None, ann=None, tls_host=None):
 class Entries(unittest.TestCase):
     def test_ingress_host_becomes_https_link(self):
         e = app.to_entry("Ingress", ing("grafana", "grafana.example.org"))
-        self.assertEqual(e["url"], "https://grafana.example.org")
-        self.assertEqual(e["name"], "grafana")
+        self.assertEqual((e["url"], e["name"], e["probe"]), ("https://grafana.example.org", "grafana", "https://grafana.example.org"))
 
     def test_annotations_win(self):
         e = app.to_entry("Ingress", ing("x", "x.example.org", {
-            "reyki.me/name": "Grafana", "reyki.me/description": "Dashboards",
-            "reyki.me/group": "Monitoring", "reyki.me/url": "https://g.example.org/login", "reyki.me/order": "5"}))
-        self.assertEqual((e["name"], e["description"], e["group"], e["url"], e["order"]),
-                         ("Grafana", "Dashboards", "Monitoring", "https://g.example.org/login", 5))
+            "reyki.me/name": "Grafana", "reyki.me/description": "Dashboards", "reyki.me/group": "Monitoring",
+            "reyki.me/url": "https://g.example.org/login", "reyki.me/order": "5",
+            "reyki.me/probe-url": "http://grafana.monitoring.svc:3000/api/health"}))
+        self.assertEqual((e["name"], e["description"], e["group"], e["url"], e["order"], e["probe"]),
+                         ("Grafana", "Dashboards", "Monitoring", "https://g.example.org/login", 5,
+                          "http://grafana.monitoring.svc:3000/api/health"))
+
+    def test_probe_off_or_bad(self):
+        self.assertIsNone(app.to_entry("Ingress", ing("a", "a.example.org", {"reyki.me/probe": "false"}))["probe"])
+        self.assertIsNone(app.to_entry("Ingress", ing("a", "a.example.org", {"reyki.me/probe-url": "file:///etc/passwd"}))["probe"])
 
     def test_httproute_hostnames(self):
         r = {"metadata": {"name": "git"}, "spec": {"hostnames": ["git.example.org"]}}
@@ -44,24 +49,34 @@ class Entries(unittest.TestCase):
                  ("HTTPRoute", [{"metadata": {"name": "dup"}, "spec": {"hostnames": ["a.example.org"]}}])]
         self.assertEqual([e["name"] for e in app.build(items)], ["a", "c", "b"])
 
+    def test_public_hides_probe_url(self):
+        e = app.to_entry("Ingress", ing("a", "a.example.org", {"reyki.me/probe-url": "http://a.ns.svc/health"}))
+        e["status"] = "up"
+        self.assertEqual(app.public([e]), [{"name": "a", "description": "", "group": "", "url": "https://a.example.org", "status": "up"}])
 
-class Render(unittest.TestCase):
-    def test_empty_renders_nothing(self):
-        self.assertEqual(app.render([]), "")
 
-    def test_escapes_and_groups(self):
-        out = app.render([{"name": "<b>x</b>", "description": "a & b", "group": "G\"", "url": "https://x.example.org/?a=1&b=2"}])
-        self.assertIn("&lt;b&gt;x&lt;/b&gt;", out)
-        self.assertIn("a &amp; b", out)
-        self.assertIn("G&quot;", out)
-        self.assertIn('href="https://x.example.org/?a=1&amp;b=2"', out)
-        self.assertNotIn("<b>x</b>", out)
+class Status(unittest.TestCase):
+    def test_classify(self):
+        self.assertEqual(app.classify(200, 100), "up")
+        self.assertEqual(app.classify(302, 100), "up")
+        self.assertEqual(app.classify(401, 100), "up")
+        self.assertEqual(app.classify(200, app.SLOW_MS + 1), "degraded")
+        self.assertEqual(app.classify(404, 100), "degraded")
+        self.assertEqual(app.classify(502, 100), "down")
+        self.assertEqual(app.classify(None, 0), "down")
 
-    def test_led_only_for_known_status(self):
-        base = {"name": "n", "description": "", "group": "", "url": "https://n.example.org"}
-        self.assertIn('class="led up"', app.render([dict(base, status="up")]))
-        self.assertNotIn("class=\"led", app.render([base]))
-        self.assertNotIn("class=\"led", app.render([dict(base, status="<x>")]))
+
+class Page(unittest.TestCase):
+    def test_personalise(self):
+        with open(os.path.join(app.SITE_DIR, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        out = app.personalise(src, "mesh.reyki.net", "Internal services.")
+        self.assertIn('content="/services.json"', out)
+        self.assertIn("<h1 class=\"long\">mesh<span>.</span>reyki<span>.</span>net", out)
+        self.assertIn("ssh mesh.reyki.net", out)
+        self.assertIn("Internal services.", out)
+        self.assertNotIn("api.reyki.me", out)
+        self.assertIn("https://bitsandbricks.ch", out)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,23 @@
+# mesh.reyki.net: the full page, served from the cluster, public + internal entries.
+# Must only be reachable through the mesh (NetBird / Tailscale), see README.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+  - ingress.yaml
+nameSuffix: -mesh
+labels:
+  - pairs: { instance: mesh }
+    includeSelectors: true
+patches:
+  - target: { kind: Deployment }
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: LABEL_SELECTOR, value: "reyki.me/listed in (public,internal)" }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: SITE_NAME, value: mesh.reyki.net }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: SITE_TAGLINE, value: "Internal services." }

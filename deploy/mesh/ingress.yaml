@@ -1,15 +1,13 @@
-# TODO: set ingressClassName and TLS to match the cluster (controller, cert-manager issuer or secret).
+# TODO: use an ingress class / load balancer that only listens on the mesh (NetBird / Tailscale),
+# never the public one. Set TLS to match the cluster.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: reyki-me
 spec:
-  # ingressClassName: traefik
-  # tls:
-  #   - hosts: [reyki.me]
-  #     secretName: reyki-me-tls
+  # ingressClassName: tailscale
   rules:
-    - host: reyki.me
+    - host: mesh.reyki.net
       http:
         paths:
           - path: /

@@ -1,8 +1,13 @@
-"""reyki.me: serves the landing page and fills its services list from Kubernetes.
+"""reyki.me service list: reads labelled Ingresses and HTTPRoutes from Kubernetes.
 
-Lists the Ingresses and HTTPRoutes in the cluster that carry the label
-reyki.me/listed=true and renders them into the page, server side (no JavaScript).
-Standard library only. Read-only: it needs list on ingresses and httproutes, nothing else.
+Two ways to run the same image:
+  MODE=json  only /services.json (with CORS for ALLOW_ORIGIN). Used for api.reyki.me,
+             the public page itself lives on GitHub Pages and loads the list in the browser.
+  MODE=page  the page from site/ plus /services.json on the same host. Used for mesh.reyki.net.
+
+Which objects are listed is the label selector (LABEL_SELECTOR):
+  reyki.me/listed: "public"    on reyki.me and on mesh.reyki.net
+  reyki.me/listed: "internal"  only on mesh.reyki.net
 
 Annotations on a listed Ingress or HTTPRoute (all optional):
   reyki.me/name         shown name (default: the object's name)
@@ -10,12 +15,15 @@ Annotations on a listed Ingress or HTTPRoute (all optional):
   reyki.me/group        heading the entry is grouped under
   reyki.me/url          link (default: https://<first host>)
   reyki.me/order        sort number inside its group (default 100)
-  reyki.me/probe        "false" skips the up/down check for this entry
+  reyki.me/probe        "false": no status LED for this entry
+  reyki.me/probe-url    check this URL instead of the link (e.g. http://grafana.monitoring.svc:3000/api/health)
 
-Routes: /  the page,  /assets/...  static files,  /services.json  the same list as JSON,  /healthz
+Status (PROBE=true): up = answers in time with 2xx/3xx or a login wall (401/403),
+degraded = slower than SLOW_MS, another 4xx, or a TLS certificate problem, down = 5xx or no answer.
+Standard library only. Read-only in the cluster: list on ingresses and httproutes, nothing else.
 """
 
-import html
+from html import escape
 import json
 import mimetypes
 import os
@@ -29,20 +37,25 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PREFIX = "reyki.me/"
-LABEL_SELECTOR = os.environ.get("LABEL_SELECTOR", "reyki.me/listed=true")
+MODE = os.environ.get("MODE", "page")
+LABEL_SELECTOR = os.environ.get("LABEL_SELECTOR", "reyki.me/listed=public")
+ALLOW_ORIGIN = os.environ.get("ALLOW_ORIGIN", "")
+SITE_NAME = os.environ.get("SITE_NAME", "")
+SITE_TAGLINE = os.environ.get("SITE_TAGLINE", "")
 CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "30"))
 PROBE = os.environ.get("PROBE", "false").lower() == "true"
-PROBE_TIMEOUT = float(os.environ.get("PROBE_TIMEOUT", "3"))
+PROBE_TIMEOUT = float(os.environ.get("PROBE_TIMEOUT", "5"))
+SLOW_MS = int(os.environ.get("SLOW_MS", "1500"))
 PORT = int(os.environ.get("PORT", "8080"))
 SITE_DIR = os.path.realpath(os.environ.get("SITE_DIR", os.path.join(os.path.dirname(__file__), "..", "site")))
-MARKER = "<!--SERVICES-->"
 
 SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
 SOURCES = [
     ("Ingress", "/apis/networking.k8s.io/v1/ingresses"),
     ("HTTPRoute", "/apis/gateway.networking.k8s.io/v1/httproutes"),
 ]
-CSP = "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+CSP = ("default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self'; img-src 'self'; "
+       "font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
 
 # ---- Turning Kubernetes objects into entries (pure functions, tested) ----
@@ -62,6 +75,10 @@ def first_host(kind, obj):
     return None
 
 
+def is_http(url):
+    return isinstance(url, str) and url.startswith(("https://", "http://"))
+
+
 def to_entry(kind, obj):
     """One listed object -> one entry, or None when it has no usable link."""
     meta = obj.get("metadata") or {}
@@ -72,19 +89,20 @@ def to_entry(kind, obj):
         if not host or "*" in host:
             return None
         url = "https://" + host
-    if not url.startswith(("https://", "http://")):
+    if not is_http(url):
         return None
     try:
         order = int(ann.get(PREFIX + "order", "100"))
     except ValueError:
         order = 100
+    probe_url = ann.get(PREFIX + "probe-url") or url
     return {
         "name": ann.get(PREFIX + "name") or meta.get("name", ""),
         "description": ann.get(PREFIX + "description", ""),
         "group": ann.get(PREFIX + "group", ""),
         "url": url,
         "order": order,
-        "probe": ann.get(PREFIX + "probe", "true").lower() != "false",
+        "probe": probe_url if ann.get(PREFIX + "probe", "true").lower() != "false" and is_http(probe_url) else None,
     }
 
 
@@ -101,30 +119,32 @@ def build(items_by_kind):
     return entries
 
 
-def render(entries):
-    """Entries -> the services section. Empty string when there is nothing to list."""
-    if not entries:
-        return ""
-    esc = lambda s: html.escape(s, quote=True)
-    out = ['<section class="services" aria-labelledby="svc">', '  <p class="prompt" id="svc"><b>$</b> show services</p>']
-    group = None
-    for e in entries:
-        if e["group"] != group:
-            if group is not None:
-                out.append("  </ul>")
-            group = e["group"]
-            if group:
-                out.append(f'  <p class="group">{esc(group)}</p>')
-            out.append("  <ul>")
-        shown = urllib.parse.urlsplit(e["url"]).netloc or e["url"]
-        led = ""
-        if e.get("status") in ("up", "down"):
-            led = f'<span class="led {e["status"]}" title="{e["status"]}"></span>'
-        what = f'<span class="what">{esc(e["description"])}</span>' if e["description"] else ""
-        out.append(f'    <li><a href="{esc(e["url"])}"><span class="name">{led}{esc(e["name"])}</span>'
-                   f'<span class="url">{esc(shown)}</span></a>{what}</li>')
-    out += ["  </ul>", "</section>"]
-    return "\n".join(out)
+def public(entries):
+    """What leaves the server: no probe URLs (they can be cluster-internal), no sort keys."""
+    keep = ("name", "description", "group", "url", "status")
+    return [{k: e[k] for k in keep if k in e} for e in entries]
+
+
+def classify(code, ms):
+    """HTTP status (None = no answer) and response time -> up / degraded / down."""
+    if code is None or code >= 500:
+        return "down"
+    if code >= 400 and code not in (401, 403, 407):
+        return "degraded"
+    return "degraded" if ms > SLOW_MS else "up"
+
+
+def personalise(html_text, name, tagline):
+    """The page template, renamed for another host (mesh.reyki.net) and pointed at /services.json."""
+    html_text = html_text.replace('content="https://api.reyki.me/services.json"', 'content="/services.json"')
+    if name:
+        n = escape(name)
+        h1 = "<h1 class=\"long\">" if len(name) > 10 else "<h1>"
+        html_text = html_text.replace("<h1>reyki<span>.</span>me", h1 + n.replace(".", "<span>.</span>"))
+        html_text = html_text.replace("reyki.me", n)
+    if tagline:
+        html_text = html_text.replace("Self-hosted services.", escape(tagline))
+    return html_text
 
 
 # ---- Talking to the API server ----
@@ -160,12 +180,18 @@ class Kube:
 
 
 def probe(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "reyki.me"})
+    req = urllib.request.Request(url, headers={"User-Agent": "reyki.me-status"})
+    start = time.monotonic()
+    ms = lambda: (time.monotonic() - start) * 1000
     try:
         with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT) as res:
-            return "up" if res.status < 500 else "down"
+            return classify(res.status, ms())
     except urllib.error.HTTPError as e:
-        return "up" if e.code < 500 else "down"  # a 401/403 login wall still answers
+        return classify(e.code, ms())
+    except urllib.error.URLError as e:
+        if isinstance(e.reason, ssl.SSLCertVerificationError):
+            return "degraded"  # it answers, but the certificate is wrong or expired
+        return "down"
     except Exception:
         return "down"
 
@@ -174,55 +200,53 @@ def probe(url):
 
 class Cache:
     def __init__(self, kube):
-        self.kube, self.lock, self.at = kube, threading.Lock(), float("-inf")
-        with open(os.path.join(SITE_DIR, "index.html"), encoding="utf-8") as f:
-            self.template = f.read()
-        self.page, self.json = b"", b""
+        self.kube, self.lock, self.at, self.json = kube, threading.Lock(), float("-inf"), b'{"services":[]}'
 
-    def refresh(self):
+    def get(self):
         with self.lock:
-            if time.monotonic() - self.at < CACHE_SECONDS:
-                return
-            entries = build(self.kube.listed())
-            if PROBE:
-                todo = [e for e in entries if e["probe"]]
-                with ThreadPoolExecutor(max_workers=8) as pool:
-                    for e, status in zip(todo, pool.map(lambda e: probe(e["url"]), todo)):
-                        e["status"] = status
-            self.page = self.template.replace(MARKER, render(entries)).encode()
-            public = [{k: v for k, v in e.items() if k not in ("order", "probe")} for e in entries]
-            self.json = json.dumps({"services": public}, separators=(",", ":")).encode()
-            self.at = time.monotonic()
+            if time.monotonic() - self.at >= CACHE_SECONDS:
+                entries = build(self.kube.listed())
+                if PROBE:
+                    todo = [e for e in entries if e["probe"]]
+                    with ThreadPoolExecutor(max_workers=8) as pool:
+                        for e, status in zip(todo, pool.map(lambda e: probe(e["probe"]), todo)):
+                            e["status"] = status
+                self.json = json.dumps({"services": public(entries)}, separators=(",", ":")).encode()
+                self.at = time.monotonic()
+            return self.json
 
 
 class Handler(BaseHTTPRequestHandler):
     cache = None
+    page = b""
     server_version = "reyki.me"
     sys_version = ""
 
     def do_HEAD(self):
         self.do_GET(head=True)
 
+    def do_OPTIONS(self):
+        self.send(204, b"", "text/plain", cors=True)
+
     def do_GET(self, head=False):
         path = urllib.parse.urlsplit(self.path).path
         if path == "/healthz":
             return self.send(200, b"ok", "text/plain", head)
-        if path in ("/", "/index.html"):
-            self.cache.refresh()
-            return self.send(200, self.cache.page, "text/html; charset=utf-8", head, CACHE_SECONDS)
         if path == "/services.json":
-            self.cache.refresh()
-            return self.send(200, self.cache.json, "application/json", head, CACHE_SECONDS)
-        if path.startswith("/assets/"):
-            file = os.path.realpath(os.path.join(SITE_DIR, urllib.parse.unquote(path).lstrip("/")))
-            if file.startswith(os.path.join(SITE_DIR, "assets") + os.sep) and os.path.isfile(file):
-                with open(file, "rb") as f:
-                    body = f.read()
-                ctype = mimetypes.guess_type(file)[0] or "application/octet-stream"
-                return self.send(200, body, ctype, head, 86400)
+            return self.send(200, self.cache.get(), "application/json", head, CACHE_SECONDS, cors=True)
+        if MODE == "page":
+            if path in ("/", "/index.html"):
+                return self.send(200, self.page, "text/html; charset=utf-8", head, 300)
+            if path.startswith("/assets/"):
+                file = os.path.realpath(os.path.join(SITE_DIR, urllib.parse.unquote(path).lstrip("/")))
+                if file.startswith(os.path.join(SITE_DIR, "assets") + os.sep) and os.path.isfile(file):
+                    with open(file, "rb") as f:
+                        body = f.read()
+                    ctype = mimetypes.guess_type(file)[0] or "application/octet-stream"
+                    return self.send(200, body, ctype, head, 3600)
         self.send(404, b"not found\n", "text/plain", head)
 
-    def send(self, code, body, ctype, head=False, max_age=0):
+    def send(self, code, body, ctype, head=False, max_age=0, cors=False):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -230,6 +254,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", CSP)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        if cors and ALLOW_ORIGIN:
+            self.send_header("Access-Control-Allow-Origin", ALLOW_ORIGIN)
+            self.send_header("Access-Control-Allow-Methods", "GET")
+            self.send_header("Vary", "Origin")
         self.end_headers()
         if not head:
             self.wfile.write(body)
@@ -240,11 +268,17 @@ class Handler(BaseHTTPRequestHandler):
 
 mimetypes.add_type("font/woff2", ".woff2")
 mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("text/javascript", ".js")
 
 
 def main():
+    if MODE not in ("page", "json"):
+        raise SystemExit("MODE must be page or json")
     Handler.cache = Cache(Kube())
-    print(f"listening on :{PORT}, selector {LABEL_SELECTOR}, probe {PROBE}", flush=True)
+    if MODE == "page":
+        with open(os.path.join(SITE_DIR, "index.html"), encoding="utf-8") as f:
+            Handler.page = personalise(f.read(), SITE_NAME, SITE_TAGLINE).encode()
+    print(f"mode {MODE} on :{PORT}, selector {LABEL_SELECTOR}, probe {PROBE}", flush=True)
     ThreadingHTTPServer(("", PORT), Handler).serve_forever()
 
 

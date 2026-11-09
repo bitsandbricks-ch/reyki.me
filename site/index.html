@@ -10,6 +10,8 @@
 <link rel="preload" href="/assets/fonts/archivo-latin-standard-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/assets/fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/assets/site.css">
+<meta name="services" content="https://api.reyki.me/services.json">
+<script src="/assets/services.js" defer></script>
 </head>
 <body>
 <main class="box">
@@ -24,7 +26,10 @@
     <p class="lede">Self-hosted services.<span class="cursor" aria-hidden="true"></span></p>
   </section>
 
-  <!--SERVICES-->
+  <section class="services" aria-labelledby="svc" hidden>
+    <p class="prompt" id="svc"><b>$</b> show services</p>
+    <div class="list" aria-live="polite"></div>
+  </section>
 </main>
 
 <footer class="foot">

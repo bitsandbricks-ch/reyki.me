@@ -23,8 +23,9 @@ spec:
           ports:
             - { name: http, containerPort: 8080 }
           env:
-            - { name: PROBE, value: "true" }      # up/down LED per service; "false" for links only
+            - { name: PROBE, value: "true" }      # status LED per service; "false" for links only
             - { name: CACHE_SECONDS, value: "30" }
+            - { name: MODE, value: page }         # json in the public overlay
           readinessProbe:
             httpGet: { path: /healthz, port: http }
           livenessProbe:

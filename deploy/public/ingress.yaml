@@ -1,0 +1,20 @@
+# TODO: set ingressClassName and TLS to match the cluster (public ingress, cert-manager issuer or secret).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: reyki-me
+spec:
+  # ingressClassName: traefik
+  # tls:
+  #   - hosts: [api.reyki.me]
+  #     secretName: api-reyki-me-tls
+  rules:
+    - host: api.reyki.me
+      http:
+        paths:
+          - path: /services.json
+            pathType: Exact
+            backend:
+              service:
+                name: reyki-me
+                port: { name: http }

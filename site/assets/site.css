@@ -59,6 +59,10 @@ h1 span { color: var(--brick); }
 .services .name { font-weight: 600; color: var(--text); }
 .services .url { color: var(--brick); font-size: .85rem; justify-self: end; align-self: center; }
 .services a:hover .name { color: var(--brick); }
+.services .group { margin: 10px 0 -4px; font: 600 .75rem/1 var(--mono); color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
+.services .led { display: inline-block; width: 8px; height: 8px; border-radius: 1px; margin-right: 10px; vertical-align: .1em; background: var(--line-2); }
+.services .led.up { background: var(--core); }
+.services .led.down { background: var(--brick); }
 .services .what { grid-column: 1 / -1; color: var(--text-3); font-size: .82rem; }
 
 /* Footer: Powered by BitsAndBricks */
@@ -69,4 +73,3 @@ h1 span { color: var(--brick); }
 .powered strong { font: 800 .9rem/1 var(--sans); font-stretch: 125%; color: var(--text); letter-spacing: -.01em; }
 .powered strong b { color: var(--green); font-weight: 800; }
 .powered:hover strong { color: var(--brick); }
-.services[hidden] { display: none; }

@@ -14,7 +14,8 @@ no outside requests besides the list. Python standard library only.
 
 ## Listing a service
 
-Label an `Ingress` (networking.k8s.io/v1) or `HTTPRoute` (gateway.networking.k8s.io/v1):
+Label an `Ingress` (networking.k8s.io/v1), `HTTPRoute` (gateway.networking.k8s.io/v1) or Traefik
+`IngressRoute` (traefik.io/v1alpha1, the link comes from the first Host rule in its routes):
 
 ```yaml
 metadata:
@@ -52,7 +53,7 @@ With `PROBE=true` (on in both overlays) the server checks each service from insi
 | `site/assets/site.css` | All styles, colour tokens at the top |
 | `server/app.py` | The list server (`MODE=json` or `MODE=page`) |
 | `tests/` | `python3 -m unittest discover -s tests` |
-| `deploy/base` | Read-only RBAC (list ingresses and httproutes), Deployment |
+| `deploy/base` | Read-only RBAC (list ingresses, httproutes and ingressroutes), Deployment |
 | `deploy/public`, `deploy/mesh` | The two instances, each with its Ingress |
 
 ## Running

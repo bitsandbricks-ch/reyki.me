@@ -27,6 +27,8 @@
       var li = ul.appendChild(el("li"));
       var a = li.appendChild(el("a"));
       a.href = s.url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
       var name = a.appendChild(el("span", "name"));
       if (STATUS[s.status]) {
         var led = name.appendChild(el("span", "led " + s.status));

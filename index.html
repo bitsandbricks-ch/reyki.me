@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>reyki.me</title>
+<meta name="description" content="Self-hosted services on reyki.me.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/assets/fonts/archivo-latin-standard-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<main class="box">
+  <header class="head">
+    <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="12" class="mark-bg"/><path d="M14 20l14 12-14 12" class="mark-chev"/><rect x="34" y="38" width="16" height="7" rx="1.4" class="mark-cur"/></svg>
+    <span class="host">reyki.me</span>
+  </header>
+
+  <section class="motd">
+    <p class="prompt"><b>$</b> ssh reyki.me</p>
+    <h1>reyki<span>.</span>me</h1>
+    <p class="lede">Self-hosted services.<span class="cursor" aria-hidden="true"></span></p>
+  </section>
+
+  <!--
+    Services: optional. Remove the "hidden" attribute and add one <li> per tool, like this:
+    <li><a href="https://example.reyki.me"><span class="name">Name</span><span class="url">example.reyki.me</span></a><span class="what">What it is</span></li>
+  -->
+  <section class="services" aria-labelledby="svc" hidden>
+    <p class="prompt" id="svc"><b>$</b> show services</p>
+    <ul>
+    </ul>
+  </section>
+</main>
+
+<footer class="foot">
+  <a href="https://bitsandbricks.ch" class="powered">
+    <span>Powered by</span>
+    <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="5" y="12" width="17" height="10" rx="1.4" class="b"/><rect x="24.5" y="12" width="17" height="10" rx="1.4" class="b"/><rect x="44" y="12" width="17" height="10" rx="1.4" class="b"/><rect x="5" y="24.5" width="7.5" height="10" rx="1.4" class="b"/><rect x="15" y="24.5" width="17" height="10" rx="1.4" class="g"/><path d="M19 26.7h9v4.4h-2.4v1.4h-4.2v-1.4H19z" class="p"/><rect x="34.5" y="24.5" width="17" height="10" rx="1.4" class="b"/><rect x="54" y="24.5" width="7" height="10" rx="1.4" class="b"/><rect x="5" y="37" width="17" height="10" rx="1.4" class="b"/><rect x="24.5" y="37" width="17" height="10" rx="1.4" class="b"/><rect x="44" y="37" width="17" height="10" rx="1.4" class="b"/></svg>
+    <strong>Bits<b>And</b>Bricks</strong>
+  </a>
+</footer>
+</body>
+</html>

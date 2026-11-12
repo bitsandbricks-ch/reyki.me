@@ -72,7 +72,9 @@ h1.long { font-size: min(2rem, 7cqi); }
 .services .what { grid-column: 1 / -1; color: var(--text-3); font-size: .82rem; }
 
 /* Footer: Powered by BitsAndBricks */
-.foot { padding: 28px 0 8px; }
+.foot { padding: 28px 0 8px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
+.coffee { color: var(--text-3); text-decoration: none; font: 400 .8rem/1 var(--mono); }
+.coffee:hover { color: var(--brick); }
 .powered { display: inline-flex; align-items: center; gap: 8px; color: var(--text-3); text-decoration: none; font: 400 .8rem/1 var(--mono); }
 .powered svg { width: 20px; height: 20px; }
 .powered .b { fill: var(--mark-brick); } .powered .g { fill: var(--mark-green); } .powered .p { fill: var(--page); }

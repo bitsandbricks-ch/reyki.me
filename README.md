@@ -1,5 +1,7 @@
 # reyki.me
 
+[![Image](https://github.com/bitsandbricks-ch/reyki.me/actions/workflows/image.yml/badge.svg?branch=main)](https://github.com/bitsandbricks-ch/reyki.me/actions/workflows/image.yml?query=branch%3Amain) [![Pages](https://github.com/bitsandbricks-ch/reyki.me/actions/workflows/pages.yml/badge.svg?branch=main)](https://github.com/bitsandbricks-ch/reyki.me/actions/workflows/pages.yml?query=branch%3Amain) [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-bitsandbricks-ffdd00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/bitsandbricks)
+
 reyki.me is the public domain for self-hosted services. This repo holds two things:
 
 - **The reyki.me page** (`site/`): static, on GitHub Pages, so it stays up when the cluster is down.

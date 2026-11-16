@@ -160,6 +160,14 @@ class Page(unittest.TestCase):
         self.assertNotIn("api.reyki.me", out)
         self.assertIn("https://bitsandbricks.ch", out)
 
+    def test_page_policy_allows_only_the_service_list(self):
+        with open(os.path.join(app.SITE_DIR, "index.html"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("connect-src 'self' https://api.reyki.me;", src)
+        # the server's own header policy replaces it; a renamed copy must not keep a stray one
+        self.assertNotIn("Content-Security-Policy", app.personalise(src, "mesh.reyki.net", ""))
+        self.assertNotIn("Content-Security-Policy", app.personalise(src, "", ""))
+
 
 if __name__ == "__main__":
     unittest.main()

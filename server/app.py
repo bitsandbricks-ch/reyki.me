@@ -157,6 +157,8 @@ def classify(code, ms):
 def personalise(html_text, name, tagline):
     """The page template, renamed for another host (mesh.reyki.net) and pointed at /services.json."""
     html_text = html_text.replace('content="https://api.reyki.me/services.json"', 'content="/services.json"')
+    # the server sends its own, stricter CSP header; the page's meta policy is for GitHub Pages
+    html_text = re.sub(r'<!-- GitHub Pages can.t send headers[^>]*-->\n<meta http-equiv="Content-Security-Policy"[^>]*>\n', "", html_text)
     if name:
         n = escape(name)
         h1 = "<h1 class=\"long\">" if len(name) > 10 else "<h1>"

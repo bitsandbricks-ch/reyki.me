@@ -13,6 +13,7 @@ The reyki.me page (static, on GitHub Pages) and the small server that lists the 
 1. **Branch:** work on your own branch, never push to `main`. One topic per branch and pull request.
 2. **Before you push**, run what CI runs and make it pass locally:
    - `python3 -m unittest discover -s tests -v`
+   - `python3 tools/check.py` (the page: links, assets, no outside requests, CSP)
    - `kubectl kustomize deploy/public`
    - `kubectl kustomize deploy/mesh`
 3. **Pull request:** open it as a **draft** and fill in the template

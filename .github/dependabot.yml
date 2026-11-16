@@ -1,5 +1,4 @@
-# Keeps the pinned actions current (the comment after each sha says the version).
-# Add the repo's own ecosystem below (pip, npm, docker, ...).
+# Keeps the pinned actions (the comment after each sha says the version) and the base image current.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -9,10 +8,8 @@ updates:
     groups:
       actions:
         patterns: ["*"]
-  # - package-ecosystem: npm
-  #   directory: /
-  #   schedule:
-  #     interval: weekly
-  #   groups:
-  #     minor-and-patch:
-  #       update-types: [minor, patch]
+  # The Python base image in the Dockerfile (security fixes reach the image this way)
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

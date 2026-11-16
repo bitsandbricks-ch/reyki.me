@@ -10,7 +10,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build:
@@ -18,13 +17,26 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: python3 -m unittest discover -s tests -v
+      - name: Check the page (links, assets, no outside requests, CSP)
+        run: python3 tools/check.py
       - name: Render the Kubernetes manifests
         run: |
           kubectl kustomize deploy/public
           kubectl kustomize deploy/mesh
       - run: docker build -t ghcr.io/bitsandbricks-ch/reyki.me:latest -t ghcr.io/bitsandbricks-ch/reyki.me:${GITHUB_SHA::12} .
-      - if: github.event_name != 'pull_request'
-        env:
+
+  # Only this job may write packages, and it only runs on main, after the tests passed.
+  push:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build -t ghcr.io/bitsandbricks-ch/reyki.me:latest -t ghcr.io/bitsandbricks-ch/reyki.me:${GITHUB_SHA::12} .
+      - env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin

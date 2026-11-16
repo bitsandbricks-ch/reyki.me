@@ -6,6 +6,9 @@
   if (!meta || !section) return;
   var list = section.querySelector(".list");
   var STATUS = { up: "up", degraded: "slow or unexpected answer", down: "down" };
+  var shown = false; // a list came through at least once
+  var last = ""; // the list as last drawn
+  var loaded = 0; // when the last answer came in
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -15,7 +18,12 @@
   }
 
   function render(services) {
+    // The list is a live region: redrawing the same list every minute would read it out again.
+    var key = JSON.stringify(services);
+    if (key === last && !list.querySelector(".note")) return;
+    last = key;
     list.textContent = "";
+    shown = true;
     var group = null, ul = null;
     services.forEach(function (s) {
       if (!/^https?:\/\//.test(s.url || "")) return;
@@ -49,10 +57,15 @@
     var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 6000);
     fetch(meta.content, { cache: "no-store", signal: ctrl && ctrl.signal })
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (data) { render((data && data.services) || []); })
+      .then(function (data) {
+        loaded = Date.now();
+        render(Array.isArray(data && data.services) ? data.services : []);
+      })
       .catch(function () {
-        list.textContent = "";
-        list.appendChild(el("p", "note", "% cluster unreachable, services may be down"));
+        // A blip after a good load keeps the list (links still work) and only adds the note.
+        if (!shown) list.textContent = "";
+        if (list.querySelector(".note")) return;
+        list.insertBefore(el("p", "note", shown ? "% cluster unreachable, showing the last list" : "% cluster unreachable, services may be down"), list.firstChild);
         section.hidden = false;
       })
       .then(function () { clearTimeout(timer); });
@@ -60,4 +73,8 @@
 
   load();
   setInterval(function () { if (!document.hidden) load(); }, 60000);
+  // Back on a tab left in the background: don't show minutes-old LEDs until the next tick.
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && Date.now() - loaded > 60000) load();
+  });
 })();

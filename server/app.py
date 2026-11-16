@@ -132,6 +132,13 @@ def build(items_by_kind):
     return entries
 
 
+def only_public(items_by_kind):
+    """api.reyki.me guard: whatever LABEL_SELECTOR says, only objects labelled public go out."""
+    def ok(obj):
+        return ((obj.get("metadata") or {}).get("labels") or {}).get(PREFIX + "listed") == "public"
+    return [(kind, [obj for obj in items if ok(obj)]) for kind, items in items_by_kind]
+
+
 def public(entries):
     """What leaves the server: no probe URLs (they can be cluster-internal), no sort keys."""
     keep = ("name", "description", "group", "url", "status")
@@ -150,6 +157,8 @@ def classify(code, ms):
 def personalise(html_text, name, tagline):
     """The page template, renamed for another host (mesh.reyki.net) and pointed at /services.json."""
     html_text = html_text.replace('content="https://api.reyki.me/services.json"', 'content="/services.json"')
+    # the server sends its own, stricter CSP header; the page's meta policy is for GitHub Pages
+    html_text = re.sub(r'<!-- GitHub Pages can.t send headers[^>]*-->\n<meta http-equiv="Content-Security-Policy"[^>]*>\n', "", html_text)
     if name:
         n = escape(name)
         h1 = "<h1 class=\"long\">" if len(name) > 10 else "<h1>"
@@ -180,15 +189,20 @@ class Kube:
             return json.load(res).get("items") or []
 
     def listed(self):
-        out = []
+        out, failed = [], 0
         for kind, path in SOURCES:
             try:
                 out.append((kind, self.get(path)))
             except urllib.error.HTTPError as e:
                 if e.code != 404:  # 404 just means that API (Gateway API, Traefik CRDs) is not installed
                     print(f"list {kind}: HTTP {e.code}", flush=True)
+                    failed += 1
             except (urllib.error.URLError, OSError, ValueError) as e:
                 print(f"list {kind}: {e}", flush=True)
+                failed += 1
+        if failed and not out:
+            # The API server did not answer at all: keep showing the last list instead of an empty one.
+            raise OSError("no source could be listed")
         return out
 
 
@@ -212,20 +226,52 @@ def probe(url):
 # ---- Cache and HTTP ----
 
 class Cache:
+    """Serves the last list right away and refreshes it in the background when it is older than
+    CACHE_SECONDS, so a slow or dead service (probe timeout) never holds up a page load.
+    Only the very first request waits for a list."""
+
     def __init__(self, kube):
-        self.kube, self.lock, self.at, self.json = kube, threading.Lock(), float("-inf"), b'{"services":[]}'
+        self.kube, self.lock, self.at, self.json = kube, threading.Lock(), None, b'{"services":[]}'
+        self.busy = False
+
+    def refresh(self):
+        try:
+            items = self.kube.listed()
+            if MODE == "json":
+                items = only_public(items)
+            entries = build(items)
+            if PROBE:
+                todo = [e for e in entries if e["probe"]]
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    for e, status in zip(todo, pool.map(lambda e: probe(e["probe"]), todo)):
+                        e["status"] = status
+            data = json.dumps({"services": public(entries)}, separators=(",", ":")).encode()
+            with self.lock:
+                self.json = data
+        except Exception as e:  # keep the last good list
+            print(f"refresh: {e}", flush=True)
+        finally:
+            with self.lock:
+                self.at, self.busy = time.monotonic(), False
 
     def get(self):
         with self.lock:
-            if time.monotonic() - self.at >= CACHE_SECONDS:
-                entries = build(self.kube.listed())
-                if PROBE:
-                    todo = [e for e in entries if e["probe"]]
-                    with ThreadPoolExecutor(max_workers=8) as pool:
-                        for e, status in zip(todo, pool.map(lambda e: probe(e["probe"]), todo)):
-                            e["status"] = status
-                self.json = json.dumps({"services": public(entries)}, separators=(",", ":")).encode()
-                self.at = time.monotonic()
+            first = self.at is None
+            stale = first or time.monotonic() - self.at >= CACHE_SECONDS
+            start = stale and not self.busy
+            if start:
+                self.busy = True
+        if start and first:
+            self.refresh()
+        elif start:
+            threading.Thread(target=self.refresh, daemon=True).start()
+        elif first:  # another request is fetching the first list: wait for it
+            while True:
+                with self.lock:
+                    if self.at is not None:
+                        break
+                time.sleep(0.05)
+        with self.lock:
             return self.json
 
 

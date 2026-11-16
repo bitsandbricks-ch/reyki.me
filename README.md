@@ -6,7 +6,7 @@ reyki.me is the public domain for self-hosted services. This repo holds two thin
 
 - **The reyki.me page** (`site/`): static, on GitHub Pages, so it stays up when the cluster is down.
   It loads the service list from `https://api.reyki.me/services.json` in the browser. If that does
-  not answer, the page says `% cluster unreachable`.
+  not answer, the page says `% cluster unreachable` (and keeps the last list it had, if any).
 - **The service list server** (`server/`): one small image, run twice in Kubernetes:
   - `deploy/public` → **api.reyki.me**, JSON only, only entries labelled `public`, CORS for https://reyki.me.
   - `deploy/mesh` → **mesh.reyki.net**, the full page served from the cluster, `public` + `internal` entries.
@@ -33,7 +33,12 @@ metadata:
     reyki.me/probe-url: http://grafana.monitoring.svc:3000/api/health   # check this instead of the link
 ```
 
-It shows up within 30 seconds. Wildcard hosts are skipped. The probe URL never leaves the server.
+It shows up within a minute (the list is refreshed in the background every `CACHE_SECONDS`, 30 s,
+so a slow service never holds up the page). Wildcard hosts are skipped. The probe URL never leaves
+the server. If the Kubernetes API does not answer, the server keeps serving the last list.
+
+api.reyki.me (`MODE=json`) also drops anything not labelled `reyki.me/listed: "public"` itself, so
+a wrong `LABEL_SELECTOR` cannot leak internal entries.
 
 ## Status LED
 
@@ -50,11 +55,12 @@ With `PROBE=true` (on in both overlays) the server checks each service from insi
 
 | Path | What it is |
 | --- | --- |
-| `site/index.html` | The page. `<meta name="services">` says where the list comes from |
+| `site/index.html` | The page. `<meta name="services">` says where the list comes from; its Content-Security-Policy allows only that one outside address (`api.reyki.me`) |
 | `site/assets/services.js` | Loads and renders the list, refreshes every 60 s |
 | `site/assets/site.css` | All styles, colour tokens at the top |
 | `server/app.py` | The list server (`MODE=json` or `MODE=page`) |
 | `tests/` | `python3 -m unittest discover -s tests` |
+| `tools/check.py` | Checks the page before it is published: links, assets, no outside requests, CSP |
 | `deploy/base` | Read-only RBAC (list ingresses, httproutes and ingressroutes), Deployment |
 | `deploy/public`, `deploy/mesh` | The two instances, each with its Ingress |
 

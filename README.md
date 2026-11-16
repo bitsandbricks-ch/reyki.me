@@ -55,11 +55,12 @@ With `PROBE=true` (on in both overlays) the server checks each service from insi
 
 | Path | What it is |
 | --- | --- |
-| `site/index.html` | The page. `<meta name="services">` says where the list comes from |
+| `site/index.html` | The page. `<meta name="services">` says where the list comes from; its Content-Security-Policy allows only that one outside address (`api.reyki.me`) |
 | `site/assets/services.js` | Loads and renders the list, refreshes every 60 s |
 | `site/assets/site.css` | All styles, colour tokens at the top |
 | `server/app.py` | The list server (`MODE=json` or `MODE=page`) |
 | `tests/` | `python3 -m unittest discover -s tests` |
+| `tools/check.py` | Checks the page before it is published: links, assets, no outside requests, CSP |
 | `deploy/base` | Read-only RBAC (list ingresses, httproutes and ingressroutes), Deployment |
 | `deploy/public`, `deploy/mesh` | The two instances, each with its Ingress |
 

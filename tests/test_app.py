@@ -169,5 +169,68 @@ class Page(unittest.TestCase):
         self.assertNotIn("Content-Security-Policy", app.personalise(src, "", ""))
 
 
+class Http(unittest.TestCase):
+    """The real handler on a local port: headers, the list, static files and no way out of assets/."""
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        from http.server import ThreadingHTTPServer
+        cls.saved = (app.PROBE, app.CACHE_SECONDS, app.MODE, app.ALLOW_ORIGIN, app.Handler.cache, app.Handler.page)
+        app.PROBE, app.CACHE_SECONDS, app.MODE, app.ALLOW_ORIGIN = False, 60, "page", "https://reyki.me"
+        app.Handler.cache = app.Cache(FakeKube([[("Ingress", [ing("a", "a.example.org")])]]))
+        app.Handler.page = b"<!doctype html><title>t</title>"
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.base = "http://127.0.0.1:%d" % cls.server.server_address[1]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+        app.PROBE, app.CACHE_SECONDS, app.MODE, app.ALLOW_ORIGIN, app.Handler.cache, app.Handler.page = cls.saved
+
+    def get(self, path, method="GET"):
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=5)
+        c.request(method, path)  # raw path: no client-side clean-up of ../
+        r = c.getresponse()
+        body = r.read()
+        c.close()
+        return r.status, dict((k.lower(), v) for k, v in r.getheaders()), body
+
+    def test_every_answer_carries_the_security_headers(self):
+        for path in ("/", "/services.json", "/assets/site.css", "/nope"):
+            _, h, _ = self.get(path)
+            self.assertIn("default-src 'none'", h["content-security-policy"], path)
+            self.assertEqual(h["x-content-type-options"], "nosniff", path)
+            self.assertEqual(h["referrer-policy"], "no-referrer", path)
+
+    def test_list_is_json_with_cors_for_the_page_only(self):
+        import json
+        code, h, body = self.get("/services.json")
+        self.assertEqual(code, 200)
+        self.assertEqual(h["content-type"], "application/json")
+        self.assertEqual(h["access-control-allow-origin"], "https://reyki.me")
+        self.assertEqual([s["name"] for s in json.loads(body)["services"]], ["a"])
+        self.assertNotIn("access-control-allow-origin", self.get("/")[1])
+
+    def test_static_files_and_types(self):
+        code, h, _ = self.get("/assets/services.js")
+        self.assertEqual((code, h["content-type"]), (200, "text/javascript"))
+        self.assertEqual(self.get("/assets/fonts/archivo-latin-standard-normal.woff2")[1]["content-type"], "font/woff2")
+
+    def test_nothing_outside_assets_is_served(self):
+        for path in ("/assets/../index.html", "/assets/..%2f..%2fserver%2fapp.py", "/assets/%2e%2e/%2e%2e/server/app.py",
+                     "/assets/", "/server/app.py", "/CNAME", "/assets/fonts"):
+            self.assertEqual(self.get(path)[0], 404, path)
+
+    def test_head_has_no_body_and_health_answers(self):
+        code, h, body = self.get("/", "HEAD")
+        self.assertEqual((code, body), (200, b""))
+        self.assertEqual(int(h["content-length"]), len(app.Handler.page))
+        self.assertEqual(self.get("/healthz")[2], b"ok")
+
+
 if __name__ == "__main__":
     unittest.main()

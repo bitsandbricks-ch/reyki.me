@@ -1,5 +1,5 @@
 # reyki.me: the landing page plus the service list from Kubernetes. Standard library only.
-FROM python:3.13-alpine
+FROM python:3.15-alpine
 WORKDIR /app
 COPY server/app.py server/app.py
 COPY site/ site/

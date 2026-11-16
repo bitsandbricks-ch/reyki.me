@@ -6,6 +6,7 @@
   if (!meta || !section) return;
   var list = section.querySelector(".list");
   var STATUS = { up: "up", degraded: "slow or unexpected answer", down: "down" };
+  var shown = false; // a list came through at least once
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -16,6 +17,7 @@
 
   function render(services) {
     list.textContent = "";
+    shown = true;
     var group = null, ul = null;
     services.forEach(function (s) {
       if (!/^https?:\/\//.test(s.url || "")) return;
@@ -51,8 +53,10 @@
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(function (data) { render((data && data.services) || []); })
       .catch(function () {
-        list.textContent = "";
-        list.appendChild(el("p", "note", "% cluster unreachable, services may be down"));
+        // A blip after a good load keeps the list (links still work) and only adds the note.
+        if (!shown) list.textContent = "";
+        if (list.querySelector(".note")) return;
+        list.insertBefore(el("p", "note", shown ? "% cluster unreachable, showing the last list" : "% cluster unreachable, services may be down"), list.firstChild);
         section.hidden = false;
       })
       .then(function () { clearTimeout(timer); });

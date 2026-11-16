@@ -6,7 +6,7 @@ reyki.me is the public domain for self-hosted services. This repo holds two thin
 
 - **The reyki.me page** (`site/`): static, on GitHub Pages, so it stays up when the cluster is down.
   It loads the service list from `https://api.reyki.me/services.json` in the browser. If that does
-  not answer, the page says `% cluster unreachable`.
+  not answer, the page says `% cluster unreachable` (and keeps the last list it had, if any).
 - **The service list server** (`server/`): one small image, run twice in Kubernetes:
   - `deploy/public` → **api.reyki.me**, JSON only, only entries labelled `public`, CORS for https://reyki.me.
   - `deploy/mesh` → **mesh.reyki.net**, the full page served from the cluster, `public` + `internal` entries.
@@ -33,7 +33,12 @@ metadata:
     reyki.me/probe-url: http://grafana.monitoring.svc:3000/api/health   # check this instead of the link
 ```
 
-It shows up within 30 seconds. Wildcard hosts are skipped. The probe URL never leaves the server.
+It shows up within a minute (the list is refreshed in the background every `CACHE_SECONDS`, 30 s,
+so a slow service never holds up the page). Wildcard hosts are skipped. The probe URL never leaves
+the server. If the Kubernetes API does not answer, the server keeps serving the last list.
+
+api.reyki.me (`MODE=json`) also drops anything not labelled `reyki.me/listed: "public"` itself, so
+a wrong `LABEL_SELECTOR` cannot leak internal entries.
 
 ## Status LED
 

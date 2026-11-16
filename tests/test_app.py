@@ -65,6 +65,78 @@ class Entries(unittest.TestCase):
         self.assertEqual(app.public([e]), [{"name": "a", "description": "", "group": "", "url": "https://a.example.org", "status": "up"}])
 
 
+class Guard(unittest.TestCase):
+    def test_only_public_drops_internal_and_unlabelled(self):
+        pub = ing("a", "a.example.org"); pub["metadata"]["labels"] = {"reyki.me/listed": "public"}
+        internal = ing("b", "b.example.org"); internal["metadata"]["labels"] = {"reyki.me/listed": "internal"}
+        bare = ing("c", "c.example.org")
+        self.assertEqual(app.only_public([("Ingress", [pub, internal, bare])]), [("Ingress", [pub])])
+
+
+class FakeKube:
+    def __init__(self, results):
+        self.results, self.calls = list(results), 0
+
+    def listed(self):
+        self.calls += 1
+        r = self.results.pop(0) if self.results else self.last
+        self.last = r
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+
+class CacheTest(unittest.TestCase):
+    def setUp(self):
+        self.saved = (app.PROBE, app.CACHE_SECONDS, app.MODE)
+        app.PROBE, app.MODE = False, "page"
+
+    def tearDown(self):
+        app.PROBE, app.CACHE_SECONDS, app.MODE = self.saved
+
+    def names(self, cache):
+        import json
+        return [s["name"] for s in json.loads(cache.get())["services"]]
+
+    def test_keeps_last_list_when_the_api_fails(self):
+        app.CACHE_SECONDS = 0
+        cache = app.Cache(FakeKube([[("Ingress", [ing("a", "a.example.org")])], OSError("down")]))
+        self.assertEqual(self.names(cache), ["a"])
+        cache.refresh()
+        self.assertEqual(self.names(cache), ["a"])
+
+    def test_serves_cached_list_without_listing_again(self):
+        app.CACHE_SECONDS = 60
+        kube = FakeKube([[("Ingress", [ing("a", "a.example.org")])]])
+        cache = app.Cache(kube)
+        self.assertEqual(self.names(cache), ["a"])
+        self.assertEqual(self.names(cache), ["a"])
+        self.assertEqual(kube.calls, 1)
+
+    def test_stale_list_is_served_while_refreshing(self):
+        import time
+        app.CACHE_SECONDS = 0
+        first = [("Ingress", [ing("a", "a.example.org")])]
+
+        class Slow(FakeKube):
+            def listed(self):
+                if self.calls:
+                    time.sleep(0.5)
+                return super().listed()
+        cache = app.Cache(Slow([first, [("Ingress", [ing("b", "b.example.org")])]]))
+        self.assertEqual(self.names(cache), ["a"])
+        start = time.monotonic()
+        self.assertEqual(self.names(cache), ["a"])  # old list right away, refresh runs behind
+        self.assertLess(time.monotonic() - start, 0.2)
+        time.sleep(0.7)
+        self.assertEqual(self.names(cache), ["b"])
+
+    def test_json_mode_applies_the_public_guard(self):
+        app.MODE, app.CACHE_SECONDS = "json", 60
+        internal = ing("b", "b.example.org"); internal["metadata"]["labels"] = {"reyki.me/listed": "internal"}
+        self.assertEqual(self.names(app.Cache(FakeKube([[("Ingress", [internal])]]))), [])
+
+
 class Status(unittest.TestCase):
     def test_classify(self):
         self.assertEqual(app.classify(200, 100), "up")

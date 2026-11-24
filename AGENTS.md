@@ -29,12 +29,15 @@ Run what CI runs (`.github/workflows/image.yml`) and make it pass:
 
 ## Differs from the handbook
 
+- **No pre-commit hooks yet**: there is no `.pre-commit-config.yaml` ([decision 0010](https://github.com/bitsandbricks-ch/handbook/blob/main/decisions/0010-pre-commit.md)), so skip `pre-commit run --all-files` until it lands.
 - **Plain HTML, not Astro** (static-site): the page is one hand-written file in `site/` with no build step.
 - **Not headless** (service): the `deploy/mesh` instance serves the full page as well as the JSON.
 - **No `/healthz` or `/metrics` yet** (service). TODO: add them or write down why not.
 
 ## Repo-specific rules
 
+- Work from an issue: open one if there is none, comment when you start and when blocked, link it from the PR.
+- Commits and PR titles follow Conventional Commits, with these scopes: `site`, `server`, `deploy`, `ci`.
 - **Publishing:** every merge to `main` deploys the page and pushes the image. Nothing goes live except through a merged pull request.
 - **No releases:** no version and no changelog
   ([decision 0012](https://github.com/bitsandbricks-ch/handbook/blob/main/decisions/0012-no-changelog-without-releases.md)).
